@@ -20,6 +20,8 @@ class Command(BaseCommand):
         make_option('--compress', dest='compression_command', help='Optional command to run (e.g., gzip) to compress output file.'),
         make_option('--quiet', dest='quiet', action='store_true', default=False, help='Be silent.'),
         make_option('--debug', dest='debug', action='store_true', default=False, help='Show commands that are being executed.'),
+        make_option('--pgpass', dest='pgpass', action='store_true', default=False, help='Use the ~/.pgdump file for password instead of prompting (PostgreSQL only).'),
+        make_option('--raw-args', dest='raw_args', default='', help='Argument(s) to pass to database dump command as is'),
     )
 
     OUTPUT_STDOUT = object()
@@ -29,6 +31,7 @@ class Command(BaseCommand):
         self.compress = options.get('compression_command')
         self.quiet = options.get('quiet')
         self.debug = options.get('debug')
+	self.pgpass = options.get('pgpass')
 
         if self.db_name not in settings.DATABASES:
             raise CommandError('Database %s is not defined in settings.DATABASES' % self.db_name)
@@ -56,10 +59,12 @@ class Command(BaseCommand):
         else:
             outfile = os.path.join(backup_directory, filename)
 
+	raw_args = options['raw_args']
+
         if 'mysql' in self.engine:
-            self.do_mysql_backup(outfile)
+            self.do_mysql_backup(outfile, raw_args=raw_args)
         elif 'postgresql' in self.engine:
-            self.do_postgresql_backup(outfile)
+            self.do_postgresql_backup(outfile, raw_args=raw_args)
         else:
             raise CommandError('Backups of %s engine are not implemented.' % self.engine)
 
@@ -69,7 +74,7 @@ class Command(BaseCommand):
     def destination_filename(self, backup_directory, database_name):
         return os.path.join(backup_directory, '%s_backup_%s.sql' % (database_name, time.strftime('%Y%m%d-%H%M%S')))
 
-    def do_mysql_backup(self, outfile):
+    def do_mysql_backup(self, outfile, raw_args=''):
         if not self.quiet:
             print 'Doing MySQL backup of database "%s" into %s' % (self.db, outfile)
 
@@ -82,6 +87,8 @@ class Command(BaseCommand):
             main_args += ['--host=%s' % self.host]
         if self.port:
             main_args += ['--port=%s' % self.port]
+        if raw_args:
+            main_args += [raw_args]	
 
         excluded_args = main_args[:]
         if self.excluded_tables or self.empty_tables:
@@ -111,19 +118,21 @@ class Command(BaseCommand):
 
         os.system(command)
 
-    def do_postgresql_backup(self, outfile):
+    def do_postgresql_backup(self, outfile, raw_args=''):
         if not self.quiet:
             print 'Doing PostgreSQL backup of database "%s" into %s' % (self.db, outfile)
 
         main_args = []
         if self.user:
             main_args += ['--username=%s' % self.user]
-        if self.password:
+        if self.password and not self.pgpass:
             main_args += ['--password']
         if self.host:
             main_args += ['--host=%s' % self.host]
         if self.port:
             main_args += ['--port=%s' % self.port]
+        if raw_args:
+            main_args += [raw_args]	
  
         excluded_args = main_args[:]
         if self.excluded_tables or self.empty_tables:
